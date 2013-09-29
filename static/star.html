@@ -1,4 +1,6 @@
 <html>
+    <script src="//js.leapmotion.com/0.2.0/leap.min.js"></script>
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
     <style>
         body {
             margin: 0px;
@@ -68,8 +70,10 @@
 
     <script src="three.min.js"></script>
     <script type="text/javascript">
+        var controller;
         var star_hue = 0.16;
         var star_age = 0.0;
+        var spin_speed = 0.03;
 
         var particle_mesh, star_mesh, corona_mesh;
 
@@ -85,6 +89,8 @@
 
         var corona_uniforms;
         var flareColor;
+
+        var last_progress = 0;
 
         var time = Date.now() * 0.005;
 
@@ -328,6 +334,12 @@
 
         function update_star_age() {
             // Stars get colder/redder/as they get older
+            if (star_age < 0) {
+                star_age = 0;
+            } else if (star_age > 1) {
+                star_age =1;
+            }
+
             var start_hue = 0.16;
             var start_val = 0.4;
             var end_val = 0.1;
@@ -393,14 +405,37 @@
                 star_age -= 0.02;
             }
 
-            if (star_age < 0) {
-                star_age = 0;
-            } else if (star_age > 1) {
-                star_age =1;
-            }
 
             return false;
         };
+
+        function handle_circle(gesture) {
+            if (gesture.state == "start") {
+                last_progress = 0;
+            }
+
+            var progress_delta = gesture.progress - last_progress;
+            last_progress = gesture.progress;
+
+            if (gesture.normal[2] > 0) {
+                // Counter clockwise
+                progress_delta *= -1;
+            }
+
+            star_age += spin_speed * progress_delta;
+            console.log(star_age);
+        }
+
+        Leap.loop({enableGestures: true}, function(obj) {
+                if (obj.gestures.length > 0) {
+                    obj.gestures.forEach(function(gesture) {
+                        if (gesture.type == "circle") {
+                            handle_circle(gesture);
+                        }
+                });
+            }
+        });
+
 
     </script>
 </html>
