@@ -1,0 +1,326 @@
+<html>
+<body>
+</body>
+    <script type="x-shader/x-vertex" id="corona_vtx">
+        uniform float amplitude;
+        attribute float size;
+
+        varying vec2 vUv;
+
+        void main() {
+                vUv = uv;
+                vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+                gl_Position = projectionMatrix * mvPosition;
+        }
+    </script>
+    
+    <script type="x-shader/x-fragment" id="corona_frag">
+        uniform sampler2D texture;
+        uniform sampler2D ramp;
+        varying vec2 vUv;
+        uniform float time;
+
+        void main() {
+            float mag = texture2D( texture, vUv ).r * time;
+            vec3 color = texture2D(ramp, vec2(mag, 0)).rgb;
+//            float mag = texture2D(texture, vec2(vUv.x, 0.5)).r;
+            gl_FragColor = vec4(color, mag);
+        }
+    </script>
+
+    <script type="x-shader/x-vertex" id="sun_particle_vtx">
+        uniform float amplitude;
+        attribute float size;
+        attribute vec3 pcolor;
+
+        varying vec3 vColor;
+
+        void main() {
+                vColor = pcolor;
+                vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+
+                gl_PointSize = size * ( 700.0 / length( mvPosition.xyz ) );
+                gl_Position = projectionMatrix * mvPosition;
+
+        }
+    </script>
+
+    <script type="x-shader/x-fragment" id="sun_particle_frag">
+        uniform sampler2D texture;
+        varying vec3 vColor;
+
+        void main() {
+            vec4 outColor = texture2D( texture, gl_PointCoord );
+            gl_FragColor = outColor * vec4( vColor, 0.95 );
+        }
+    </script>
+
+    <script src="three.min.js"></script>
+    <script type="text/javascript">
+        var star_hue = 0.95;
+
+        var camera, scene, renderer;
+        var geometry, material, mesh;
+        var particleSystem;
+        var cloud1, cloud2;
+        var attributes;
+        var corona_sprite;
+        var star_size=200;
+
+        var point_count = 20000;
+        var using_shaders = true;
+
+        var corona_uniforms;
+
+        var time = Date.now() * 0.005;
+
+        init();
+        animate();
+
+        function create_particle_material() {
+            if (using_shaders === false) {
+                var material = new THREE.ParticleBasicMaterial({
+                        color: 0xFFFFF,
+                        size: 50,
+                        map: THREE.ImageUtils.loadTexture("particle.png"),
+                        blending: THREE.AdditiveBlending,
+                        transparent: true
+                        });
+                return material;
+            }
+            else {
+                attributes = {
+                    size: {type: 'f', value: [] },
+                    pcolor: {type: 'c', value: [] }
+                };
+                var uniforms = {
+                    amplitude: { type: "f", value: 1.0 },
+                    color:     { type: "c", value: new THREE.Color( 0xffffff ) },
+                    texture:   { type: "t", value: THREE.ImageUtils.loadTexture( "particle.png" ) },
+                };
+                var material = new THREE.ShaderMaterial( {
+                    uniforms: uniforms,
+                    attributes: attributes,
+                    vertexShader: document.getElementById('sun_particle_vtx').textContent,
+                    fragmentShader: document.getElementById('sun_particle_frag').textContent,
+                    blending: THREE.AdditiveBlending,
+                    depthTest: false,
+                    transparent: true
+                });
+
+                for (var i = 0; i < point_count; i++) {
+                    attributes.size.value[i] = 50;
+                    var custom_color = new THREE.Color(0xffaa00);
+                    var hue = star_hue + 0.1 * (i/point_count);
+                    hue = hue%1.0;
+                    custom_color.setHSL( hue, 0.8, 0.4);
+                    attributes.pcolor.value[i] = custom_color;
+                }
+
+                return material;
+            }
+        }
+
+        function create_point_cloud(radius) {
+            var particleSystem;
+            // Create geometry
+            var cloud = new THREE.Geometry();
+
+            var points = generate_point_cloud(point_count, radius);
+            var particle_material = create_particle_material();
+
+            for (var i = 0; i < point_count; i++) {
+                var particle = points[i];
+                cloud.vertices.push(particle);
+            }
+
+            particleSystem = new THREE.ParticleSystem(
+                    cloud,
+                    particle_material);
+
+            particleSystem.sortParticles = true;
+            particleSystem.dynamic = true;
+            return particleSystem;
+        };
+
+        function init_skybox() {
+            var skybox_map = THREE.ImageUtils.loadTexture( "space_bg.jpg" );
+            var skybox_mat = new THREE.MeshLambertMaterial({map:skybox_map});
+            var skybox_geo = new THREE.PlaneGeometry(8000, 6222);
+            var skybox = new THREE.Mesh(
+                    skybox_geo,
+                    skybox_mat);
+            skybox.position.z = -4000;
+
+            scene.add(skybox);
+        };
+
+        function init_threejs() {
+            // Create a camera above the scene plane at 1000 units
+            camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.1, 10000 );
+            camera.position.z = 1000;
+
+            // Create a new scene
+            scene = new THREE.Scene();
+            renderer = new THREE.WebGLRenderer();
+            renderer.setClearColor(new THREE.Color(0, 1));
+            renderer.setSize( window.innerWidth, window.innerHeight );
+
+        };
+
+        function init_lighting() {
+
+            var directionalLight = new THREE.DirectionalLight( 0xffffff );
+            directionalLight.position.set( 0, 0, 1 );
+            directionalLight.position.normalize();
+
+            scene.add( directionalLight );
+        };
+
+        function init_star() {
+            // Create attributes for the outer point cloud -- maybe
+            // A mesh is composed of geometry+material
+            cloud1 = create_point_cloud(star_size);
+            var star_core_geo = new THREE.SphereGeometry(star_size-5, 16, 16);
+            var mesh_color = new THREE.Color(0xffffff);
+            mesh_color.setHSL(star_hue, 0.9, 0.2);
+            var star_mesh = new THREE.Mesh(
+                    star_core_geo,
+                    new THREE.MeshLambertMaterial( { color: 0xaa3300 } )
+            );
+
+
+            // Add the mesh and the light to the scene
+            scene.add(cloud1);
+            scene.add(star_mesh);
+
+            var textureFlare0 = THREE.ImageUtils.loadTexture( "lensflare0.png" );
+            var textureFlare2 = THREE.ImageUtils.loadTexture( "lensflare2.png" );
+            var textureFlare3 = THREE.ImageUtils.loadTexture( "lensflare3.png" );
+
+            var flareColor = new THREE.Color(0xffffff);
+            flareColor.setHSL(star_hue, 0.9, 1);
+
+            var lensFlare = new THREE.LensFlare( textureFlare0, 800, 0.0, THREE.AdditiveBlending, flareColor );
+            lensFlare.position.z = 201;
+            
+            scene.add(lensFlare);
+
+        };
+
+        function init_corona() {
+            var corona_scale = 900;
+            var corona_img = THREE.ImageUtils.loadTexture("corona.png");
+
+            if (using_shaders === true) {
+                var corona_attr = {}
+                corona_uniforms = {
+                    amplitude: { type: "f", value: 1.0 },
+                    color:     { type: "c", value: new THREE.Color( 0xffffff ) },
+                    texture:   { type: "t", value: THREE.ImageUtils.loadTexture( "corona.png" ) },
+                    ramp:      { type: "t", value: THREE.ImageUtils.loadTexture( "color_ramp.png" ) },
+                    time:      { type: "f", value: 7.84 }
+                };
+
+                var corona_mat = new THREE.ShaderMaterial( {
+                    uniforms: corona_uniforms,
+                    attributes: corona_attr,
+                    vertexShader: document.getElementById('corona_vtx').textContent,
+                    fragmentShader: document.getElementById('corona_frag').textContent,
+                    blending: THREE.AdditiveBlending,
+                    depthTest: false,
+                    transparent: true
+                });
+            }
+            else {
+                var corona_mat = new THREE.MeshLambertMaterial({map:corona_img});
+            }
+            var corona_geo = new THREE.PlaneGeometry(corona_scale, corona_scale);
+            var corona = new THREE.Mesh(
+                    corona_geo,
+                    corona_mat);
+            corona.position.z = -10;
+
+            scene.add(corona);
+        }
+
+        function init() {
+
+            init_threejs();
+
+            init_lighting();
+            init_corona();
+            init_star();
+            init_skybox();
+            document.body.appendChild( renderer.domElement );
+        }
+
+        function generate_unit_vector() {
+            var x = Math.random() - 0.5;
+            var y = Math.random() - 0.5;
+            var z = Math.random() - 0.5;
+
+            var mult = 1.0/Math.sqrt(x*x + y*y + z*z);
+            return [ x*mult, y*mult, z*mult ];
+        }
+
+        function generate_point_cloud(num_points, scale) {
+            var vectors = [];
+            for (var i = 0; i < num_points; i++) {
+                var vec = generate_unit_vector();
+                var v_x = vec[0] * scale;
+                var v_y = vec[1] * scale;
+                var v_z = vec[2] * scale;
+                vectors.push(new THREE.Vector3(v_x, v_y, v_z));
+            }
+            return vectors;
+        };
+
+        // Animate function is called periodically?
+        function animate() {
+
+            // note: three.js includes requestAnimationFrame shim
+            requestAnimationFrame( animate );
+
+            update_scene();
+
+            // Render the scene with the camera
+            renderer.render( scene, camera );
+        }
+
+        function rotate_star(time) {
+            cloud1.rotation.z = 0.004 * time;
+            cloud1.rotation.x = -0.004 * time;
+            cloud1.rotation.y = 0.003 * time;
+        };
+
+        function undulate_particles(time) {
+            for( var i = 0; i < attributes.size.value.length; i++ ) {
+                attributes.size.value[ i ] = 32 + 10 * Math.sin( 0.1 * i + time );
+            }
+
+            attributes.size.needsUpdate = true;
+            attributes.pcolor.needsUpdate = true;
+        };
+
+        function shift_corona() {
+//            corona_uniforms.time.value = Math.sin(1/6*time)/10 + 0.8;
+//            console.log(corona_uniforms.time.value);
+            corona_uniforms.time.value = Math.sin(1/3*time)*0.1 + 0.5;
+           corona_uniforms.time.needsUpdate = true;
+        }
+
+        function update_scene() {
+            var old_time = time;
+            time = Date.now() * 0.005;
+
+            rotate_star(time);
+
+            if (using_shaders) {
+                undulate_particles(time);
+                shift_corona(time);
+            }
+        }
+
+    </script>
+</html>
