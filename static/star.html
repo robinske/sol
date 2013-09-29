@@ -1,3 +1,4 @@
+
 <html>
     <script src="//js.leapmotion.com/0.2.0/leap.min.js"></script>
     <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
@@ -93,6 +94,8 @@
         var last_progress = 0;
 
         var time = Date.now() * 0.005;
+
+        var scale = 1
 
         init();
         animate();
@@ -370,7 +373,7 @@
                 var factor = (star_age - 0.3) / 0.7;
                 scale_star(1 + factor * 0.5);
             } else {
-                scale_star(1);
+                scale_star(scale);
             }
         };
 
@@ -378,6 +381,8 @@
             if (factor > 1.5) {
                 factor = 1.5;
             }
+
+            console.log("scaling star")
             // Scale the star_mesh, the particle_mesh, and the corona_mesh
             star_mesh.scale.set(factor, factor, factor);
             particle_mesh.scale.set(factor, factor, factor);
@@ -427,12 +432,32 @@
         }
 
         Leap.loop({enableGestures: true}, function(obj) {
-                if (obj.gestures.length > 0) {
+            if (obj.gestures.length > 0) {
                     obj.gestures.forEach(function(gesture) {
                         if (gesture.type == "circle") {
                             handle_circle(gesture);
                         }
                 });
+            }
+            if (obj.hands.length == 2) {
+                var hand1 = obj.hands[0];
+                var hand2 = obj.hands[1];
+
+                var hand1Center = hand1.sphereCenter
+                var hand2Center = hand2.sphereCenter
+
+                var xd = hand1Center[0] - hand2Center[0]
+                var yd = hand1Center[1] - hand2Center[1]
+                var zd = hand1Center[2] - hand2Center[2]
+
+                var handDistance = Math.sqrt(xd*xd + yd*yd + zd*zd)
+
+                console.log(handDistance)
+
+                var normalizedFactor = (handDistance - 30)/(350) + .5
+                console.log(normalizedFactor);
+
+                scale = normalizedFactor
             }
         });
 
