@@ -354,14 +354,18 @@
             flareColor.setHSL( hue, 0.8, val);
 
             // scale the star
-            if (star_age > 0.5) {
-                scale_star(1 + star_age-0.5);
+            if (star_age > 0.3) {
+                var factor = (star_age - 0.3) / 0.7;
+                scale_star(1 + factor * 0.5);
             } else {
                 scale_star(1);
             }
         };
 
         function scale_star(factor) {
+            if (factor > 1.5) {
+                factor = 1.5;
+            }
             // Scale the star_mesh, the particle_mesh, and the corona_mesh
             star_mesh.scale.set(factor, factor, factor);
             particle_mesh.scale.set(factor, factor, factor);
