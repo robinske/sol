@@ -1,4 +1,14 @@
 <html>
+    <style>
+        body {
+            margin: 0px;
+            padding: 0px;
+        }
+        html {
+            margin: 0px;
+            padding: 0px;
+        }
+    </style>
 <body>
 </body>
     <script type="x-shader/x-vertex" id="corona_vtx">
@@ -19,12 +29,13 @@
         uniform sampler2D ramp;
         varying vec2 vUv;
         uniform float time;
+        uniform float apparence;
 
         void main() {
             float mag = texture2D( texture, vUv ).r * time;
             vec3 color = texture2D(ramp, vec2(mag, 0)).rgb;
 //            float mag = texture2D(texture, vec2(vUv.x, 0.5)).r;
-            gl_FragColor = vec4(color, mag);
+            gl_FragColor = vec4(color, mag * apparence);
         }
     </script>
 
@@ -57,12 +68,14 @@
 
     <script src="three.min.js"></script>
     <script type="text/javascript">
-        var star_hue = 0.95;
+        var star_hue = 0.16;
+        var star_age = 0.0;
+
+        var particle_mesh, star_mesh, corona_mesh;
 
         var camera, scene, renderer;
         var geometry, material, mesh;
         var particleSystem;
-        var cloud1, cloud2;
         var attributes;
         var corona_sprite;
         var star_size=200;
@@ -71,6 +84,7 @@
         var using_shaders = true;
 
         var corona_uniforms;
+        var flareColor;
 
         var time = Date.now() * 0.005;
 
@@ -112,8 +126,12 @@
                     attributes.size.value[i] = 50;
                     var custom_color = new THREE.Color(0xffaa00);
                     var hue = star_hue + 0.1 * (i/point_count);
-                    hue = hue%1.0;
-                    custom_color.setHSL( hue, 0.8, 0.4);
+                    if (hue > 1) {
+                        hue -= 1;
+                    } else if (hue < 0) {
+                        hue = 1 - hue;
+                    }
+                    custom_color.setHSL( hue, 0.8, 0.15);
                     attributes.pcolor.value[i] = custom_color;
                 }
 
@@ -180,25 +198,23 @@
         function init_star() {
             // Create attributes for the outer point cloud -- maybe
             // A mesh is composed of geometry+material
-            cloud1 = create_point_cloud(star_size);
+            particle_mesh = create_point_cloud(star_size);
             var star_core_geo = new THREE.SphereGeometry(star_size-5, 16, 16);
             var mesh_color = new THREE.Color(0xffffff);
             mesh_color.setHSL(star_hue, 0.9, 0.2);
-            var star_mesh = new THREE.Mesh(
+            star_mesh = new THREE.Mesh(
                     star_core_geo,
                     new THREE.MeshLambertMaterial( { color: 0xaa3300 } )
             );
 
 
             // Add the mesh and the light to the scene
-            scene.add(cloud1);
+            scene.add(particle_mesh);
             scene.add(star_mesh);
 
             var textureFlare0 = THREE.ImageUtils.loadTexture( "lensflare0.png" );
-            var textureFlare2 = THREE.ImageUtils.loadTexture( "lensflare2.png" );
-            var textureFlare3 = THREE.ImageUtils.loadTexture( "lensflare3.png" );
 
-            var flareColor = new THREE.Color(0xffffff);
+            flareColor = new THREE.Color(0xffffff);
             flareColor.setHSL(star_hue, 0.9, 1);
 
             var lensFlare = new THREE.LensFlare( textureFlare0, 800, 0.0, THREE.AdditiveBlending, flareColor );
@@ -219,7 +235,8 @@
                     color:     { type: "c", value: new THREE.Color( 0xffffff ) },
                     texture:   { type: "t", value: THREE.ImageUtils.loadTexture( "corona.png" ) },
                     ramp:      { type: "t", value: THREE.ImageUtils.loadTexture( "color_ramp.png" ) },
-                    time:      { type: "f", value: 7.84 }
+                    time:      { type: "f", value: 7.84 },
+                    apparence: { type: "f", value: 1.0 }
                 };
 
                 var corona_mat = new THREE.ShaderMaterial( {
@@ -236,12 +253,12 @@
                 var corona_mat = new THREE.MeshLambertMaterial({map:corona_img});
             }
             var corona_geo = new THREE.PlaneGeometry(corona_scale, corona_scale);
-            var corona = new THREE.Mesh(
+            corona_mesh = new THREE.Mesh(
                     corona_geo,
                     corona_mat);
-            corona.position.z = -10;
+            corona_mesh.position.z = -10;
 
-            scene.add(corona);
+            scene.add(corona_mesh);
         }
 
         function init() {
@@ -289,9 +306,9 @@
         }
 
         function rotate_star(time) {
-            cloud1.rotation.z = 0.004 * time;
-            cloud1.rotation.x = -0.004 * time;
-            cloud1.rotation.y = 0.003 * time;
+            particle_mesh.rotation.z = 0.004 * time;
+            particle_mesh.rotation.x = -0.004 * time;
+            particle_mesh.rotation.y = 0.003 * time;
         };
 
         function undulate_particles(time) {
@@ -300,7 +317,6 @@
             }
 
             attributes.size.needsUpdate = true;
-            attributes.pcolor.needsUpdate = true;
         };
 
         function shift_corona() {
@@ -310,17 +326,77 @@
            corona_uniforms.time.needsUpdate = true;
         }
 
+        function update_star_age() {
+            // Stars get colder/redder/as they get older
+            var start_hue = 0.16;
+            var start_val = 0.4;
+            var end_val = 0.1;
+            var end_hue = -0.1;
+
+            var hue_delta = Math.abs(end_hue - start_hue);
+            var val_delta = Math.abs(end_val - start_val);
+
+            var base_hue = start_hue - star_age*hue_delta;
+            var val = start_val - star_age*val_delta;
+
+            for (var i = 0; i < point_count; i++) {
+                var color = attributes.pcolor.value[i];
+                var hue = base_hue + 0.1 * (i/point_count);
+                color.setHSL( hue, 0.8, val);
+            }
+
+            // Age the corona
+            corona_uniforms.apparence.value = 1 - star_age + 0.5;
+            corona_uniforms.apparence.needsUpdate = true;
+            attributes.pcolor.needsUpdate = true;
+
+            //reduce the lens flare
+            flareColor.setHSL( hue, 0.8, val);
+
+            // scale the star
+            if (star_age > 0.5) {
+                scale_star(1 + star_age-0.5);
+            } else {
+                scale_star(1);
+            }
+        };
+
+        function scale_star(factor) {
+            // Scale the star_mesh, the particle_mesh, and the corona_mesh
+            star_mesh.scale.set(factor, factor, factor);
+            particle_mesh.scale.set(factor, factor, factor);
+            corona_mesh.scale.set(factor, factor, factor);
+        }
+
         function update_scene() {
             var old_time = time;
             time = Date.now() * 0.005;
 
             rotate_star(time);
 
+            update_star_age();
+
             if (using_shaders) {
                 undulate_particles(time);
                 shift_corona(time);
             }
         }
+
+        document.onkeyup = function(evt) {
+            if (evt.keyIdentifier === "Up") {
+                star_age += 0.02;
+            } else if (evt.keyIdentifier === "Down") {
+                star_age -= 0.02;
+            }
+
+            if (star_age < 0) {
+                star_age = 0;
+            } else if (star_age > 1) {
+                star_age =1;
+            }
+
+            return false;
+        };
 
     </script>
 </html>
